@@ -1,7 +1,7 @@
 // Master sound buffer store for polyphonic playback
 const soundBuffers = {};
 
-// Fallback synths
+// Fallback & Accent Synths
 const bayanSynth = new Tone.MembraneSynth().toDestination();
 const dayanSynth = new Tone.MetalSynth({
   frequency: 220,
@@ -11,6 +11,18 @@ const dayanSynth = new Tone.MetalSynth({
   resonance: 2000,
   octaves: 1.5
 }).toDestination();
+
+// Warm, Melodious Sam Bell Chime
+const bellSynth = new Tone.PolySynth(Tone.Synth, {
+  oscillator: { type: "sine" },
+  envelope: {
+    attack: 0.01,
+    decay: 1.2,
+    sustain: 0.01,
+    release: 0.8
+  }
+}).toDestination();
+bellSynth.volume.value = -12;
 
 let loopEvent = null;
 let isPlaying = false;
@@ -39,6 +51,11 @@ const recBtn = document.getElementById('recBtn');
 const newBolNameInput = document.getElementById('newBolName');
 const statusMsg = document.getElementById('statusMsg');
 
+const patternSelect = document.getElementById('patternSelect');
+const newPatternNameInput = document.getElementById('newPatternName');
+const savePatternBtn = document.getElementById('savePatternBtn');
+const deletePatternBtn = document.getElementById('deletePatternBtn');
+
 // Explicit mapping of preset files in sound/ folder
 const soundFileMap = {
   "dha": ["sound/Dha.webm", "sound/dha.webm", "sounds/dha.webm", "sounds/dha.mp3"],
@@ -52,7 +69,7 @@ const soundFileMap = {
 };
 
 // ============================================================
-// INDEXEDDB DATABASE (PERMANENT STORAGE)
+// INDEXEDDB DATABASE (PERMANENT STORAGE FOR RECORDINGS)
 // ============================================================
 const DB_NAME = 'TablaAutomatorDB';
 const STORE_NAME = 'custom_bols';
@@ -96,7 +113,6 @@ async function loadSavedBolsFromDB() {
         const rawCtx = Tone.context.rawContext || Tone.context;
         const decodedBuffer = await rawCtx.decodeAudioData(arrayBuffer.slice(0));
         soundBuffers[bolName] = processAudioBuffer(decodedBuffer);
-        console.log(`📱 Loaded clean custom bol "${bolName}" from database.`);
         cursor.continue();
       }
     };
@@ -105,14 +121,11 @@ async function loadSavedBolsFromDB() {
   }
 }
 
-// ============================================================
 // AUDIO PROCESSOR (SILENCE TRIMMER + PEAK NORMALIZER)
-// ============================================================
 function processAudioBuffer(audioBuffer, targetPeak = 0.85) {
   const channelData = audioBuffer.getChannelData(0);
   let startIndex = 0;
   
-  // 1. Trim leading silence
   for (let i = 0; i < channelData.length; i++) {
     if (Math.abs(channelData[i]) > 0.015) {
       startIndex = i;
@@ -142,7 +155,6 @@ function processAudioBuffer(audioBuffer, targetPeak = 0.85) {
     }
   }
 
-  // 2. Normalize gain to prevent screeching/clipping
   if (maxPeak > 0) {
     const scale = targetPeak / maxPeak;
     for (let c = 0; c < processedBuffer.numberOfChannels; c++) {
@@ -167,7 +179,6 @@ async function loadAudioFile(bolKey, urlPath) {
     const rawAudioBuffer = await rawCtx.decodeAudioData(arrayBuffer);
     
     soundBuffers[bolKey] = processAudioBuffer(rawAudioBuffer);
-    console.log(`⚡ Processed & Loaded clean audio for "${bolKey}" from ${urlPath}`);
     return true;
   } catch (err) {
     return false;
@@ -186,13 +197,114 @@ async function initSoundLibrary() {
 
 initSoundLibrary();
 
-// Parse sequence text into visual grid
+// ============================================================
+// TAALA PRESETS & PATTERN MANAGER LOGIC
+// ============================================================
+const DEFAULT_PATTERNS = {
+  "Teental (16 Beats)": "X: Dha Dhin Dhin Dha | 2: Dha Dhin Dhin Dha | 0: Dha Tin Tin Ta | 3: Ta Dhin Dhin Dha",
+  "Jhaptal (10 Beats)": "X: Dhi Na | 2: Dhi Dhi Na | 0: Ti Na | 3: Dhi Dhi Na",
+  "Rupak (7 Beats)": "0: Tin Tin Na | 2: Dhin Na | 3: Dhin Na",
+  "Keherwa (8 Beats)": "X: Dha Ge Na Ti | 0: Na Ka Dhi Na"
+};
+
+const STORAGE_PATTERNS_KEY = 'tabla_saved_patterns_dict';
+const ACTIVE_PATTERN_KEY = 'tabla_active_pattern_name';
+
+function getSavedPatterns() {
+  const stored = localStorage.getItem(STORAGE_PATTERNS_KEY);
+  if (stored) {
+    try { return JSON.parse(stored); } catch(e) {}
+  }
+  return { ...DEFAULT_PATTERNS };
+}
+
+function savePatternsToStorage(patterns) {
+  localStorage.setItem(STORAGE_PATTERNS_KEY, JSON.stringify(patterns));
+}
+
+function updatePatternDropdown() {
+  const patterns = getSavedPatterns();
+  patternSelect.innerHTML = '';
+
+  Object.keys(patterns).forEach(name => {
+    const opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = name;
+    patternSelect.appendChild(opt);
+  });
+
+  const activeName = localStorage.getItem(ACTIVE_PATTERN_KEY);
+  if (activeName && patterns[activeName]) {
+    patternSelect.value = activeName;
+    bolsInput.value = patterns[activeName];
+  } else {
+    const firstName = Object.keys(patterns)[0];
+    if (firstName) {
+      patternSelect.value = firstName;
+      bolsInput.value = patterns[firstName];
+    }
+  }
+  parsePattern(bolsInput.value);
+}
+
+// Event: Select saved pattern from dropdown
+patternSelect.addEventListener('change', () => {
+  const patterns = getSavedPatterns();
+  const selectedName = patternSelect.value;
+  if (patterns[selectedName]) {
+    bolsInput.value = patterns[selectedName];
+    localStorage.setItem(ACTIVE_PATTERN_KEY, selectedName);
+    parsePattern(bolsInput.value);
+  }
+});
+
+// Event: Save new pattern or update existing
+savePatternBtn.addEventListener('click', () => {
+  let name = newPatternNameInput.value.trim();
+  if (!name) {
+    name = patternSelect.value; // Overwrite current if box is empty
+  }
+
+  if (!name) {
+    alert("Please type a pattern name to save (e.g., 'Dadra')");
+    return;
+  }
+
+  const patterns = getSavedPatterns();
+  patterns[name] = bolsInput.value;
+  savePatternsToStorage(patterns);
+  
+  localStorage.setItem(ACTIVE_PATTERN_KEY, name);
+  newPatternNameInput.value = '';
+  updatePatternDropdown();
+  alert(`✅ Saved pattern "${name}"!`);
+});
+
+// Event: Delete pattern from library
+deletePatternBtn.addEventListener('click', () => {
+  const name = patternSelect.value;
+  if (!name) return;
+
+  if (confirm(`Delete saved pattern "${name}"?`)) {
+    const patterns = getSavedPatterns();
+    delete patterns[name];
+    savePatternsToStorage(patterns);
+    localStorage.removeItem(ACTIVE_PATTERN_KEY);
+    updatePatternDropdown();
+  }
+});
+
+// Initialize Pattern Dropdown
+updatePatternDropdown();
+
+// Pattern parser
 function parsePattern(inputText) {
   gridContainer.innerHTML = '';
   parsedMatras = [];
 
   const rawVibhags = inputText.split('|');
-  
+  let globalBeatIndex = 0;
+
   rawVibhags.forEach((vibhagStr, vIdx) => {
     let text = vibhagStr.trim();
     let taliKhaliTag = `Vibhag ${vIdx + 1}`;
@@ -225,12 +337,20 @@ function parsePattern(inputText) {
       const matraCard = document.createElement('div');
       matraCard.className = 'matra-card';
       matraCard.textContent = bol;
+
+      if (globalBeatIndex === 0) {
+        matraCard.classList.add('sam-beat');
+      }
+
       matraList.appendChild(matraCard);
 
       parsedMatras.push({
         bol: bol.toLowerCase(),
-        element: matraCard
+        element: matraCard,
+        isSam: globalBeatIndex === 0
       });
+
+      globalBeatIndex++;
     });
 
     vibhagBox.appendChild(matraList);
@@ -239,8 +359,9 @@ function parsePattern(inputText) {
 }
 
 if (bolsInput) {
-  parsePattern(bolsInput.value);
-  bolsInput.addEventListener('input', () => { if (!isPlaying) parsePattern(bolsInput.value); });
+  bolsInput.addEventListener('input', () => { 
+    if (!isPlaying) parsePattern(bolsInput.value); 
+  });
 }
 
 // Play sound safely
@@ -261,7 +382,6 @@ function playBol(bolName, time) {
     }
   }
 
-  // Fallback Synth if audio file is missing
   if (['dha', 'dhin', 'ge', 'ga', 'ghe'].includes(bol)) {
     bayanSynth.triggerAttackRelease("C2", "8n", time);
     dayanSynth.triggerAttackRelease("C4", "16n", time, 0.2);
@@ -270,9 +390,7 @@ function playBol(bolName, time) {
   }
 }
 
-// ============================================================
-// CLEAN MIC RECORDER (MIC CONSTRAINTS PREVENT SCREECHING)
-// ============================================================
+// MIC RECORDER LOGIC
 if (recBtn) {
   recBtn.addEventListener('click', async () => {
     await Tone.start();
@@ -284,17 +402,16 @@ if (recBtn) {
       .replace(/\.(wav|mp3|ogg|m4a|webm)$/i, '');
     
     if (!bolName) {
-      alert("Please type a name for the bol first (e.g. 'ghe')");
+      alert("Please type a name for the bol first (e.g. 'tirakit')");
       return;
     }
 
     try {
-      // Audio constraints to prevent distortion, squeaking, and gain spikes
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
-          autoGainControl: false // Prevents mic gain pumping / squealing
+          autoGainControl: false
         }
       });
 
@@ -319,8 +436,6 @@ if (recBtn) {
 
         const rawCtx = Tone.context.rawContext || Tone.context;
         const decodedBuffer = await rawCtx.decodeAudioData(arrayBuffer);
-        
-        // Clean, trim, and normalize peak volume
         soundBuffers[bolName] = processAudioBuffer(decodedBuffer);
 
         statusMsg.innerHTML = `<span style="color: #00f2fe;">✅ Recorded Cleanly! Bol "${bolName}" saved.</span>`;
@@ -346,7 +461,7 @@ if (recBtn) {
   });
 }
 
-// PLAYBACK LOGIC
+// PLAYBACK & ACCENT LOGIC
 function stopSession() {
   Tone.Transport.stop();
   if (loopEvent) loopEvent.dispose();
@@ -377,6 +492,11 @@ if (startBtn) {
 
       loopEvent = new Tone.Loop((time) => {
         const currentBeat = parsedMatras[beatIndex % parsedMatras.length];
+
+        // Soft melodious bell on Sam
+        if (currentBeat.isSam) {
+          bellSynth.triggerAttackRelease("A5", "8n", time);
+        }
 
         playBol(currentBeat.bol, time);
 
