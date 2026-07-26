@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tabla Automation Engine</title>
+  <!-- PWA Manifest & Theme -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#00f2fe">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+ 
+ <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background-color: #121212;
+      color: #ffffff;
+      padding: 20px;
+      max-width: 650px;
+      margin: 20px auto;
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    }
+    h1 { text-align: center; color: #00f2fe; margin-top: 0; }
+    h3 { color: #00f2fe; margin-bottom: 10px; border-bottom: 1px solid #333; padding-bottom: 5px; }
+    label { font-weight: 600; display: block; margin-top: 12px; margin-bottom: 4px; font-size: 0.85rem; }
+    input[type="text"], input[type="number"] {
+      width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #333;
+      background-color: #1e1e1e; color: #fff; font-size: 1rem; box-sizing: border-box;
+    }
+    
+    .panel-box {
+      background: #181818; padding: 15px; border-radius: 8px; margin-top: 15px; border: 1px solid #2a2a2a;
+    }
+    .grid-2x2 {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+    }
+
+    /* Grid display for Vibhags */
+    #gridContainer {
+      display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap; justify-content: center;
+    }
+    .vibhag-box { border: 1px solid #333; background: #1a1a1a; padding: 8px; border-radius: 8px; text-align: center; }
+    .vibhag-header { font-size: 0.8rem; font-weight: bold; color: #ff007f; margin-bottom: 6px; }
+    .matra-list { display: flex; gap: 6px; }
+    .matra-card {
+      padding: 6px 10px; background: #2a2a2a; border-radius: 6px; min-width: 28px; font-weight: 600;
+      transition: all 0.1s ease;
+    }
+    .matra-card.active { background: #00f2fe; color: #000; font-weight: bold; transform: scale(1.1); }
+
+    .rec-btn {
+      background: #ff4b4b; color: #fff; border: none; padding: 10px; font-weight: bold;
+      border-radius: 8px; cursor: pointer; margin-top: 10px; width: 100%;
+    }
+    .play-btn {
+      width: 100%; margin-top: 20px; padding: 14px; background: #00f2fe; color: #000;
+      border: none; font-size: 1.1rem; font-weight: bold; border-radius: 8px; cursor: pointer;
+    }
+    #statusMsg { color: #00f2fe; font-size: 0.85rem; margin-top: 5px; text-align: center; }
+    #timerDisplay { font-size: 1rem; color: #ff007f; font-weight: bold; text-align: center; margin-top: 12px; }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+</head>
+<body>
+
+  <h1>🥁 Tabla Automator</h1>
+
+  <!-- 1. Sequence Input -->
+  <label for="bolsInput">Type Sequence (Use '|' for Divisions):</label>
+  <input type="text" id="bolsInput" value="X: Dha Dhin Dhin Dha | 2: Dha Dhin Dhin Dha | 0: Dha Tin Tin Ta | 3: Ta Dhin Dhin Dha">
+
+  <!-- Visual Matra Grid -->
+  <div id="gridContainer"></div>
+
+  <!-- 2. Stepped Tempo Automation Panel -->
+  <div class="panel-box">
+    <h3>⏱️ Stepped Tempo Automation</h3>
+    <div class="grid-2x2">
+      <div>
+        <label for="startBpm">Start BPM:</label>
+        <input type="number" id="startBpm" value="200" min="40" max="300">
+      </div>
+      <div>
+        <label for="targetBpm">Target BPM:</label>
+        <input type="number" id="targetBpm" value="160" min="40" max="300">
+      </div>
+      <div>
+        <label for="bpmStep">Step Change (±BPM):</label>
+        <input type="number" id="bpmStep" value="20" min="1" max="50">
+      </div>
+      <div>
+        <label for="holdSecs">Hold Time per Step (Secs):</label>
+        <input type="number" id="holdSecs" value="10" min="2" step="1">
+      </div>
+    </div>
+    <div id="timerDisplay">Current BPM: 200 | Target: 160 BPM</div>
+  </div>
+
+  <!-- 3. Mic Audio Recorder Panel -->
+  <div class="panel-box">
+    <h3>🎙️ Record Custom Bol (1 Sec)</h3>
+    <div>
+      <label for="newBolName">Bol Name:</label>
+      <input type="text" id="newBolName" placeholder="e.g. tirakit">
+    </div>
+    <button id="recBtn" class="rec-btn">🔴 Record 1-Sec Bol</button>
+    <div id="statusMsg"></div>
+  </div>
+
+  <button id="startBtn" class="play-btn">▶ Start Practice Session</button>
+
+  <script src="app.js"></script>
+  <!-- Service Worker Registration -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+          .then(reg => console.log('📱 Service Worker Registered Successfully!'))
+          .catch(err => console.warn('Service Worker Registration Failed:', err));
+      });
+    }
+  </script>
+</body>
+</html>
